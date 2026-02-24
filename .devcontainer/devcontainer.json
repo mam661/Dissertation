@@ -1,15 +1,9 @@
 {
     "name": "ROS2 Gazebo",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
-    "features": {
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:latest": {},
-        "ghcr.io/devcontainers/features/git:latest": {}
+    "build": {
+        "dockerfile": "Dockerfile"
     },
-    "postCreateCommand": "apt-get update && apt-get install -y ros-humble-desktop ros-humble-gazebo-plugins ros-humble-gazebo-ros && rosdep update",
     "remoteUser": "root",
-    "mounts": [
-        "source=${localEnv:USERPROFILE}/.ros,target=/root/.ros,type=bind,consistency=cached"
-    ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -19,8 +13,5 @@
                 "redhat.vscode-xml"
             ]
         }
-    },
-    "forwardPorts": [
-        8888
-    ]
+    }
 }
