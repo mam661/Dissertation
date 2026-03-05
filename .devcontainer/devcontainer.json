@@ -1,18 +1,53 @@
 {
-  "name": "ArduPilot Dev",
+  "name": "ROS2 Gazebo + ArduPilot",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "remoteUser": "ardupilot",
-  "features": {},
-  "extensions": [
-    "ms-vscode.cpptools",
-    "ms-vscode.cmake-tools",
-    "ms-iot.vscode-ros"
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:latest": {},
+    "ghcr.io/devcontainers/features/git:latest": {}
+  },
+  "postCreateCommand": "apt-get update && apt-get install -y python3-geopy socat && pip3 install --upgrade pymavlink MAVProxy && bash /usr/local/bin/setup-display.sh",
+  "remoteUser": "root",
+  "runArgs": [
+    "--device=/dev/dxg"
   ],
   "mounts": [
-    "source=${localWorkspaceFolder},target=/home/ardupilot/workspace,type=bind,consistency=cached"
+    "source=${localEnv:USERPROFILE}/.ros,target=/root/.ros,type=bind,consistency=cached",
+    "source=ardupilot-logs,target=/ardupilot/logs,type=volume",
+    "source=/usr/lib/wsl,target=/usr/lib/wsl,type=bind,readonly",
+    "source=/run/desktop/mnt/host/wslg,target=/mnt/wslg,type=bind,readonly",
+    "source=/run/desktop/mnt/host/wslg/.X11-unix,target=/tmp/.X11-unix,type=bind,readonly"
   ],
-  "workspaceFolder": "/home/ardupilot/workspace"
+  "containerEnv": {
+    "ARDUPILOT_HOME": "/ardupilot",
+    "GAZEBO_MODEL_PATH": "/ardupilot_gazebo/models",
+    "GAZEBO_RESOURCE_PATH": "/ardupilot_gazebo/worlds",
+    "DISPLAY": ":0",
+    "WAYLAND_DISPLAY": "wayland-0",
+    "PULSE_SERVER": "/mnt/wslg/PulseServer",
+    "LD_LIBRARY_PATH": "/usr/lib/wsl/lib",
+    "GALLIUM_DRIVER": "d3d12"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.cpptools",
+        "DotJoshJohnson.xml",
+        "redhat.vscode-xml",
+        "mavlink.mavlink"
+      ]
+    }
+  },
+  "forwardPorts": [
+    8888,
+    5760,
+    5770,
+    5780,
+    5790,
+    14550,
+    14551
+  ]
 }
