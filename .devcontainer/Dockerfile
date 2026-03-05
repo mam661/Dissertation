@@ -127,7 +127,8 @@ RUN for RCFILE in /root/.bashrc /home/ardupilot/.bashrc; do \
     done
 
 COPY .devcontainer/setup-display.sh /usr/local/bin/setup-display.sh
-RUN chmod +x /usr/local/bin/setup-display.sh
+RUN sed -i 's/\r//' /usr/local/bin/setup-display.sh && \
+    chmod +x /usr/local/bin/setup-display.sh
 
 WORKDIR /workspace
 ENTRYPOINT ["/bin/bash"]
