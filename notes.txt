@@ -1,0 +1,23 @@
+So, to start make it work, we need to build/ open in a container
+
+then in one terminal you need to do gazebo --verbose /ardupilot_gazebo/worlds/iris_arducopter_runway.worlds
+
+Then in another terminal:
+
+source ~/.bashrc
+
+cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris --console
+
+//then wait a bit for it all to sync and stuff, and then:
+
+mode guided
+
+arm throttle
+
+takeoff 10 
+
+
+
+Then there can be:
+
+velocity x y z, where it says for how long to go in each direction
