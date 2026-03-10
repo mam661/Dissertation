@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 spawn_drones.py - Spawn N ArduPilot iris drones into a running Gazebo world.
 
@@ -85,7 +86,7 @@ def print_sitl_commands(n_drones):
         mavlink_port = 5760 + i * 10
         gcs_port     = 14550 + i * 10
         print(f"\n# Drone {i}  (MAVLink: {mavlink_port}, GCS: {gcs_port})")
-        print(f"cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I{i} --console")
+        print(f"cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I{i} --console --add-param-file=/workspaces/Dissertation/sitl_params.parm")
     print()
 
 

@@ -55,6 +55,7 @@ RUN pip3 install MAVProxy pymavlink future
 RUN useradd -m -s /bin/bash ardupilot && \
     echo "ardupilot ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+
 # ---------------------------------------------------------------------------
 # 5. ArduPilot SITL
 # ---------------------------------------------------------------------------
@@ -86,6 +87,17 @@ USER root
 # Fix git ownership warning — /ardupilot was cloned as ardupilot user but
 # will be used as root, so we need to mark it as a safe directory.
 RUN git config --global --add safe.directory /ardupilot
+
+# Set default SITL params for multi-drone simulation
+RUN echo "SCHED_LOOP_RATE 200" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ARMING_SKIPCHK 1" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_RLL_P 0.05" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_RLL_I 0.05" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_RLL_D 0.003" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_PIT_P 0.05" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_PIT_I 0.05" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "ATC_RAT_PIT_D 0.003" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm && \
+    echo "SIM_GPS_NOISE 0.0" >> /ardupilot/Tools/autotest/default_params/gazebo-iris.parm
 
 # ---------------------------------------------------------------------------
 # 6. ardupilot_gazebo for Gazebo Classic — khancyr fork
