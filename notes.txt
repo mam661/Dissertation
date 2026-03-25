@@ -1,12 +1,21 @@
 So, to start make it work, we need to build/ open in a container
 
-then in one terminal you need to do gazebo --verbose /ardupilot_gazebo/worlds/iris_arducopter_runway.worlds
+
+
+export GAZEBO_MODEL_PATH=/workspaces/Dissertation/models:$GAZEBO_MODEL_PATH
+gazebo --verbose /workspaces/Dissertation/models/map2.world
 
 Then in another terminal:
 
 source ~/.bashrc
 
-cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris --console
+python3 spawn_drones.py --drones 2
+^^The number at the end is the number of drones
+
+
+Then this (Mentioned in the console after the above command):
+cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I0 --console --add-param-file=/workspaces/Dissertation/sitl_params.parm
+^^ The -I[number] denotes which drone is being controlled
 
 //then wait a bit for it all to sync and stuff, and then:
 
@@ -14,29 +23,9 @@ mode guided
 
 arm throttle
 
-takeoff 10 
-
+takeoff 5
 
 
 Then there can be:
 
 velocity x y z, where it says for how long to go in each direction
-
-
-for multiple drones:
-
-export GAZEBO_MODEL_PATH=/workspaces/Dissertation/models:$GAZEBO_MODEL_PATH
-gazebo --verbose /workspaces/Dissertation/search_rescue.world
-
-
-Then in a second terminal: (Where the number after "--drones" denotes the number of drones)
-
-cd /workspaces/Dissertation
-python3 spawn_drones.py --drones 2
-
-
-
-Then in third and fourth terminals: (Where -I[n] is robot number starting at 0)
-
-cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I0 --console --add-param-file=/workspaces/Dissertation/sitl_params.parm
-cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I1 --console --add-param-file=/workspaces/Dissertation/sitl_params.parm
