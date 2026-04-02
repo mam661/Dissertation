@@ -1,4 +1,4 @@
-class DroneProperties:
+class droneProperties:
     
     
     def __init__(self, drone_id):
@@ -7,6 +7,10 @@ class DroneProperties:
         self.pose = [0.0, 0.0, 0.0]  # (latitude, longitude, altitude)
         self.status = "idle"
         self.last_update = None
+        
+    def get_id(self):
+        """Get the drone's unique identifier."""
+        return self.drone_id
 
     
     def set_armed(self, armed):

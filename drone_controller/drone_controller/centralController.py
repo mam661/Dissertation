@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-import droneProperties as dp
+from helpers.droneProperties import droneProperties as dp
 
 class centralController(Node):
  
@@ -12,6 +12,9 @@ class centralController(Node):
         super().__init__("central_controller")
  
         self.get_logger().info("Central Controller starting...")
+        
+        self.declare_parameter("num_drones", 0)
+        self.numDrones = self.get_parameter("num_drones").value
  
         self.cmd_pubhlisher = self.create_publisher(
             String,
@@ -28,8 +31,9 @@ class centralController(Node):
         self.get_logger().info("Central Controller ready. Publishing on /coordinator/commands")
         
         self.droneProperties = []
-        for i in range(3):
-            self.droneProperties.append(dp.DroneProperties(f"drone_{i}"))
+        for i in range(self.numDrones):
+            self.droneProperties.append(dp(f"drone_{i}"))
+            self.get_logger().info("added drone")
  
  
  
@@ -44,8 +48,13 @@ class centralController(Node):
     def testPublish(self):
         
         msg = String()
-        msg.data = f"ALL|HELLO tick={self.tickNum}"
-        self.cmd_pubhlisher.publish(msg)
+        for i in self.droneProperties:
+            #self.get_logger().info(f"Drone {i.get_id()} is in state {i.get_status()}")
+            d_num = i.get_id().split("_")[1]
+            msg.data = f"drone_{d_num}|GOTO: x:{2*int(d_num)} y:0 z:2"
+            self.cmd_pubhlisher.publish(msg)
+        #msg.data = f"ALL|HELLO tick={self.tickNum}"
+        #self.cmd_pubhlisher.publish(msg)
         self.tickNum += 1
  
 
