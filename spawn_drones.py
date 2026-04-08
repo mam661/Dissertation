@@ -83,10 +83,12 @@ def print_sitl_commands(n_drones):
     print("Now start SITL instances - one terminal per drone:")
     print("="*60)
     for i in range(n_drones):
-        mavlink_port = 5760 + i * 10
-        gcs_port     = 14550 + i * 10
+        mavlink_port = 14551 + i * 10
+        gcs_port     = 15001 + i * 10
         print(f"\n# Drone {i}  (MAVLink: {mavlink_port}, GCS: {gcs_port})")
-        print(f"cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I{i} --console --add-param-file=/workspaces/Dissertation/sitl_params.parm")
+        print(f"cd /ardupilot && sim_vehicle.py -v ArduCopter -f gazebo-iris -I{i} --console --add-param-file=/workspaces/Dissertation/sitl_params.parm --out=udp:127.0.0.1:{mavlink_port}")
+
+        
     print()
 
 

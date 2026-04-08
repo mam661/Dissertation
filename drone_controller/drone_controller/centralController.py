@@ -11,7 +11,7 @@ class centralController(Node):
     def __init__(self):
         super().__init__("central_controller")
  
-        self.get_logger().info("Central Controller starting...")
+        self.get_logger().info("Central Controller starting...t")
         
         self.declare_parameter("num_drones", 0)
         self.numDrones = self.get_parameter("num_drones").value
@@ -56,6 +56,7 @@ class centralController(Node):
         #msg.data = f"ALL|HELLO tick={self.tickNum}"
         #self.cmd_pubhlisher.publish(msg)
         self.tickNum += 1
+        self.get_logger().info(f"Published a message")
  
 
 def main(args=None):
