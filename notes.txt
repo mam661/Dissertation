@@ -34,7 +34,7 @@ velocity x y z, where it says for how long to go in each direction
 
 pkill -9 gzserver; pkill -9 gzclient; pkill -9 gazebo; pkill -9 python3
 
-
+https://docs.ros.org/en/jade/api/mavlink/html/mavutil_8py_source.html
 
 
 output add 127.0.0.1:14551
