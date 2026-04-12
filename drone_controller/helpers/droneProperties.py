@@ -23,13 +23,12 @@ class droneProperties:
     
     def set_position(self, latitude, longitude, altitude):
         """Set drone GPS position and altitude."""
-        self.latitude = latitude
-        self.longitude = longitude
-        self.altitude = altitude
+        self.pose = [latitude, longitude, altitude]
+        print(f"set pose to {self.pose}")
     
     def get_position(self):
-        """Get drone position as tuple (lat, lon, alt)."""
-        return (self.latitude, self.longitude, self.altitude)
+        """Get drone position as tuple [lat, lon, alt]."""
+        return (self.pose)
     
     def set_orientation(self, heading, speed):
         """Set drone heading and speed."""
