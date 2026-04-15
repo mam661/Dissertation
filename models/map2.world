@@ -11,5 +11,15 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
+    <physics type="ode">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>200</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>50</iters> </solver>
+      </ode>
+    </physics>  
   </world>
 </sdf>
