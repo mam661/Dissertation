@@ -1,14 +1,30 @@
 #!/usr/bin/env python3
+from enum import Enum
 from multiprocessing import connection
 import sys
 import time
 
 import time
+from unittest import case
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from pymavlink import mavutil
+import numpy as np
+
+from sensor_msgs.msg import LaserScan
+
+
+class State(Enum):
+    INIT = 0
+    LAUNCHING = 1
+    WAITING = 2
+    MOVING = 3
+
+    PAUSE = 9
+
+
 
 class droneNode(Node):
     def __init__(self, drone_id):
@@ -16,7 +32,8 @@ class droneNode(Node):
         self.name = f'drone_{drone_id}'
         self.id = drone_id
         
-        self.state = "INIT"
+        self.state = State.INIT
+        self.lastState = State.INIT
         self.prearm = False
         self.gpsready = False
 
@@ -41,7 +58,10 @@ class droneNode(Node):
         self.debugLoop = 0
 
         self.startTime = time.time()
-        
+
+        self.goneToStart = False
+
+        self.destination = (0.0, 0.0, 0.0)
         # MAVProxy creates UDP outputs starting at 14550. 
         # Let's use 14551 for Drone 0, 14561 for Drone 1, etc.
         self.mav_port = 14551 + (drone_id * 10)
@@ -86,6 +106,12 @@ class droneNode(Node):
             'drones/state',
             self.prev_callback,
             10)
+        
+        self.subLidar = self.create_subscription(
+            LaserScan,
+            f'/iris_{self.id}/scan',
+            self.subLidar_callback,
+            10)
 
             
         self.get_logger().info('Drone Node connected and listening.')
@@ -93,49 +119,93 @@ class droneNode(Node):
     def prev_callback(self, msg):
         pass
 
+    def subLidar_callback(self, msg):
+        
+        front = msg.ranges[0]
+        front_left = msg.ranges[45]
+        front_right = msg.ranges[315]
+        self.get_logger().info(f"Lidar readings - Front: {front:.2f}m, Front-Left: {front_left:.2f}m, Front-Right: {front_right:.2f}m")
+
+        if front < 5.0 and self.debugLoop > 30:  # If an obstacle is closer than 1 meter in front
+            self.get_logger().warn("Obstacle detected in front! Stopping movement.")
+            self.vehicle.mav.set_position_target_local_ned_send(
+                0,
+                self.vehicle.target_system, 
+                self.vehicle.target_component,
+                mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+                0b0000111111111000,  # Position only
+                self.pose[0], self.pose[1], -self.pose[2],  # Hold current position
+                0, 0, 0,  # Velocity (ignored)
+                0, 0, 0,  # Acceleration (ignored)
+                0, 0)     # Yaw (ignored)
+            self.state = State.PAUSE
+
+        return
+
     def control_loop(self):
         # This is the main control loop, called at a fixed rate by the timer
         # self.get_logger().info(f"Current state: {self.vehicle.system_status.state}")
         #self.get_logger().info("Control loop tick...")
         self.debugLoop += 1
         #self.get_logger().info(f"Debug loop count: {self.debugLoop}")
+        self.get_logger().info(f"Current state: {self.state.name}") 
         
-        if not self.takenOff:
-            self.takenOff = self.arm_and_takeoff(3)
-            self.get_logger().info(f"Takeoff status: {'Success' if self.takenOff else 'Failed'}")
-            self.pubState.publish(String(data=f"{self.id} | ready"))  # Publish "1" to indicate takeoff complete
-            time.sleep(0.2)
-        if self.takenOff:
-            pass
+        
+
+        
+        # if self.debugLoop < 30:
+        #     self.goto(5, 0, 7)
 
         if self.debugLoop % 10 == 0: 
             self.do_logs()
 
-        if self.state == "waiting":
-            pass
+    
+        match self.state:
+            case State.INIT:
+                if not self.takenOff:
+                    self.get_logger().info("Initiating takeoff sequence...")
+                    
+                    self.takenOff = self.arm_and_takeoff(1)
+                    self.get_logger().info(f"Takeoff status: {'Success' if self.takenOff else 'Failed'}")
+                    self.state = State.LAUNCHING
+                    time.sleep(0.2)
+                if self.takenOff:
+                    pass
 
+
+            case State.LAUNCHING:
+                if not self.goneToStart:
+      
+                    self.gotoStart()
+                    self.goneToStart = True
+
+                pass
+            case State.WAITING:
+                self.goto(self.pose[0] + 10, self.pose[1], 7.5)
+
+
+                pass
+            case State.MOVING:
+                self.get_logger().info(f"Moving towards destination: {self.destination}")
+                self.moving()
+
+            case State.PAUSE:
+                pass
+
+            
+            case _:
+
+
+                pass
 
         
+    def gotoStart(self):
+        self.goto(-4.5, 0, 7.5)
 
-
-
-    def goto(self, x, y, z):
-        self.state = "moving"
-        self.get_logger().info(f"Going to position: ({x}, {y}, {z})")
-        self.pubState.publish(String(data=f"{self.id} | moving"))
-        self.vehicle.mav.set_position_target_local_ned_send(
-            0,                                               # Time boot ms (not used)
-            self.vehicle.target_system, 
-            self.vehicle.target_component,
-            mavutil.mavlink.MAV_FRAME_LOCAL_NED,            # Use the local coordinate system
-            0b0000111111111000,                             # Bitmask: only use Pos X, Y, Z
-            x, y, -z,                                 # X, Y, Z (Z is negative for altitude!)
-            0, 0, 0,                                        # Velocity X, Y, Z (ignored)
-            0, 0, 0,                                        # Acceleration (ignored)
-            0, 0                                            # Yaw, Yaw rate (ignored)
-        )
+    def moving(self):
+        x,y,z = self.destination
         arrived = False
-        while not arrived:
+        try:
             msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
             if msg:
                 #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
@@ -143,21 +213,49 @@ class droneNode(Node):
                 if abs(msg.x - x) < 0.2 and abs(msg.y - y) < 0.2 and abs(-msg.z - z) < 0.2:
 
                     arrived = True
+        except Exception as e:
+            self.get_logger().error(f"Error receiving position: {e}")
 
         self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
+        if arrived:
+            self.get_logger().info(f"Arrived at destination! {x}, {y}, {z}")
+            time.sleep(2)  # Small delay to stabilize at the position
+            self.state = State.WAITING
+            self.pubState.publish(String(data=f"{self.id} | ready"))
+
+
+
+    def goto(self, x, y, z):
+        self.lastState = self.state
         
-        self.get_logger().info(f"Arrived at destination! {x}, {y}, {z}")
-        time.sleep(2)  # Small delay to stabilize at the position
-        self.state = "waiting"
-        self.pubState.publish(String(data=f"{self.id} | ready"))
+        self.destination = (x, y, z)
+        self.get_logger().info(f"Going to position: ({x}, {y}, {z})")
+        
+        self.vehicle.mav.set_position_target_local_ned_send(
+            0,                                               # Time boot ms (not used)
+            self.vehicle.target_system, 
+            self.vehicle.target_component,
+            mavutil.mavlink.MAV_FRAME_LOCAL_NED,            # Use the local coordinate system
+            0b0000111111111000,                             # Bitmask: only use Pos X, Y, Z
+            x, y, -z,                                 # X, Y, Z (Z is negative for altitude!)
+            0.2, 0.2, 0.2,                                        # Velocity X, Y, Z 
+            0, 0, 0,                                        # Acceleration (ignored)
+            0, 0                                            # Yaw, Yaw rate (ignored)
+        )
+        self.pubState.publish(String(data=f"{self.id} | moving"))
+        self.state = State.MOVING
+        
+        
 
 
     def do_logs(self):
-        
-        altMsg = self.vehicle.recv_match(type='VFR_HUD', blocking=False)
-        if altMsg:
-            self.get_logger().info(f"Current Altitude: {altMsg.alt - self.initialAltitude:.2f}m")
-        self.get_logger().info(f"current tick: {self.debugLoop}")
+        try:
+            altMsg = self.vehicle.recv_match(type='VFR_HUD', blocking=False)
+            if altMsg:
+                self.get_logger().info(f"Current Altitude: {altMsg.alt - self.initialAltitude:.2f}m")
+            self.get_logger().info(f"current tick: {self.debugLoop}")
+        except Exception as e:
+            self.get_logger().error(f"Error in do_logs: {e}")
 
 
     def listener_callback(self, msg):
@@ -168,7 +266,7 @@ class droneNode(Node):
             return  # Ignore messages not intended for this drone
         self.cmd_msg = msg
         self.get_logger().info(f"Received command: {msg.data}")
-        if "GOTO" in msg.data:
+        if "GOTO" in msg.data and False:
             # Expecting format: "drone_0|GOTO: x:5.0 y:5.0 z:3.0"
             try:
                 cmd_parts = msg.data.split("|")[1].split("GOTO: ")[1]
@@ -208,7 +306,7 @@ class droneNode(Node):
                 self.gpsready = True    
         
         if 'VFR_HUD' in str(msg) and self.initialAltitude is None:
-            #self.get_logger().info(f"Current Altitude: {msg.alt:.2f}m")
+            self.get_logger().info(f"Current Altitude: {msg.alt:.2f}m")
             self.initialAltitude = msg.alt
         
         if self.prearm and self.gpsready and self.initialAltitude or time.time() - self.startTime > 180: 

@@ -25,7 +25,7 @@ TEMPLATE_SDF = os.path.join(os.path.dirname(__file__), "models", "iris_ardupilot
 
 def get_spawn_position(index, spacing):
     """Arrange drones in a row along the x-axis."""
-    x = index * spacing
+    x = index * -spacing
     y = 0.0
     z = 0.0
     return x, y, z

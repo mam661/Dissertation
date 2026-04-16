@@ -117,5 +117,62 @@
       </control>
     </plugin>
 
+    <link name="base_scan">
+      <pose>0 0 0.25 0 0 0</pose>
+      
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <inertia>
+          <ixx>0.0001</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0001</iyy><iyz>0</iyz><izz>0.0001</izz>
+        </inertia>
+        <mass>0.01</mass>
+      </inertial>
+
+      <visual name="lidar_sensor_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.03</radius>
+            <length>0.1</length> </cylinder>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient> </material>
+      </visual>
+
+      <sensor name="hls_lfcd_lds" type="ray">
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <update_rate>10</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>6.28319</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.3</min> 
+            <max>10.0</max>
+          </range>
+        </ray>
+        <plugin name="iris_laserscan" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <namespace>__MODEL_NAME__</namespace>
+            <remapping>~/out:=scan</remapping>
+          </ros>
+          <output_type>sensor_msgs/LaserScan</output_type>
+          <frame_name>base_scan</frame_name>
+        </plugin>
+      </sensor>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+      <parent>iris::base_link</parent>
+      <child>base_scan</child>
+      <pose>0 0 1 0 0 0</pose>
+    </joint>
+
   </model>
 </sdf>
