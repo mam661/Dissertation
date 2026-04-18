@@ -38,3 +38,5 @@ https://docs.ros.org/en/jade/api/mavlink/html/mavutil_8py_source.html
 
 
 output add 127.0.0.1:14551
+
+https://ardupilot.org/copter/docs/parameters.html#wp-parameters

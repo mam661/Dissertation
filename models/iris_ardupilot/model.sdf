@@ -153,8 +153,8 @@
             </horizontal>
           </scan>
           <range>
-            <min>0.3</min> 
-            <max>10.0</max>
+            <min>0.35</min> 
+            <max>15.0</max>
           </range>
         </ray>
         <plugin name="iris_laserscan" filename="libgazebo_ros_ray_sensor.so">
