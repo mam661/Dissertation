@@ -32,6 +32,8 @@ class droneNode(Node):
         super().__init__(f'drone_node_{drone_id}')
         self.name = f'drone_{drone_id}'
         self.id = drone_id
+
+        self.offset = -5*drone_id  # Each drone starts 5 meters further along the tunnel
         
         self.state = State.INIT
         self.lastState = State.INIT
@@ -152,13 +154,13 @@ class droneNode(Node):
         self.front_right = msg.ranges[315]
         
 
-        if self.front < 7.0 and self.debugLoop > 30 and self.state != State.PAUSE and self.state != State.LANDING:  # If an obstacle is closer than 7 meters in front
+        if self.front < 8.0 and self.debugLoop > 30 and self.state != State.PAUSE and self.state != State.LANDING:  # If an obstacle is closer than 8 meters in front
             self.get_logger().warn("Obstacle detected in front! Stopping movement.")
             self.state = State.PAUSE
             self.pubState.publish(String(data=f"{self.id} | PAUSE"))
             self.get_logger().warn(f"Current state: {self.state}")
             lastDest = self.destination
-            self.destination = (lastDest[0] - 5, lastDest[1], lastDest[2])  # Hold current position
+            self.destination = (lastDest[0] - 4, lastDest[1], lastDest[2])  # Hold current position
             self.get_logger().warn(f"Going to destination: ({self.destination}) due to obstacle")
             self.vehicle.mav.set_position_target_local_ned_send(
                 0,                                               # Time boot ms (not used)
@@ -173,36 +175,38 @@ class droneNode(Node):
             )
             
 
+
+
+
+   
+        return
+    
+    def paused(self):
         arrived = False
 
 
-        if self.state == State.PAUSE:
-            # self.get_logger().info("Boop")
-            # self.nodeTicker += 1
 
-            x,y,z = self.destination
-            
-            try:
-                msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
-                if msg:
-                    #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
-                    self.pose = [msg.x, msg.y, -msg.z]
-                    if abs(msg.x - x) < 0.4 and abs(msg.y - y) < 0.4 and abs(-msg.z - z) < 0.4:
-
-                        arrived = True
-            except Exception as e:
-                self.get_logger().error(f"Error receiving position: {e}")
-
-            #self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
-
+        x,y,z = self.destination
         
-            if self.front >= 15.0 and arrived:
-                self.get_logger().info("Path is clear. Resuming movement.")
-                self.state = State.MOVING
-                self.pubState.publish(String(data=f"{self.id} | moving"))
+        try:
+            msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
+            if msg:
+                #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
+                self.pose = [msg.x, msg.y, -msg.z]
+                if abs(msg.x - x) < 0.4 and abs(msg.y - y) < 0.4 and abs(-msg.z - z) < 0.4:
+
+                    arrived = True
+
+                    time.sleep(2) # Small delay to stabilize at the position
+
+        except Exception as e:
+            self.get_logger().error(f"Error receiving position: {e}")
 
         
 
+        #self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
+
+    
         if arrived:
             if self.front >= 15.0:
                 self.get_logger().info("Path is clear. Resuming movement.")
@@ -269,7 +273,7 @@ class droneNode(Node):
                 self.finish()
 
             case State.PAUSE:
-                self.processPause()
+                self.paused()
 
             
 
@@ -283,17 +287,11 @@ class droneNode(Node):
     def gotoStart(self):
         self.goto(-4.5, 0, 8)
 
-    def processPause(self):
-        if self.front >= 10.0:
-            self.get_logger().info("Path is clear. Resuming movement.")
-            self.state = State.MOVING
-            self.pubState.publish(String(data=f"{self.id} | moving"))
-        elif self.debugLoop % 10 == 0:
-            self.get_logger().warn("Path still blocked. Remaining paused.")
+
 
     def finish(self):
         self.relayNode = [self.pose[0], self.pose[1], self.pose[2]]
-        destination = (self.pose[0], self.pose[1], self.pose[2]+4)
+        self.destination = (self.pose[0], self.pose[1], self.pose[2]-5)  # Land by going 5 meters down from current position to get them out of the way
         x,y,z = self.destination
         if self.ready:
             self.vehicle.mav.set_position_target_local_ned_send(
@@ -327,8 +325,12 @@ class droneNode(Node):
         
         if arrived:
             self.get_logger().info("Finished. Shutting down node.")
-            self.get_logger().warn(f"Node created at: {self.destination}")
-            rclpy.shutdown()
+            self.get_logger().warn(f"Node created at: {self.relayNode}")
+
+    def findAngles(self):
+        # This will work out the angles of the next tunnels, to inform the path planning of the next drone
+        pass
+
 
     def moving(self):
         x,y,z = self.destination
@@ -349,7 +351,6 @@ class droneNode(Node):
             self.get_logger().info(f"Arrived at destination! {x}, {y}, {z}")
             time.sleep(2)  # Small delay to stabilize at the position
             self.state = State.WAITING
-            self.pubState.publish(String(data=f"{self.id} | ready"))
 
 
 
