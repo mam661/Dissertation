@@ -75,7 +75,7 @@ class centralController(Node):
             pos_list = pos_str.split(" ")
             x = float(pos_list[0])
             y = float(pos_list[1])
-            z = float(pos_list[2])
+            z = float(pos_list[2]) + 5*int(num)  # Add the offset back to get the actual position in the tunnel
             self.droneProperties[int(num)].set_position(x, y, z)
             self.get_logger().info(f"Updated position for drone {num} to [{x}, {y}, {z}]")
             self.get_logger().info(f"Drone {num} is now at position: {self.droneProperties[int(num)].get_position()}")
