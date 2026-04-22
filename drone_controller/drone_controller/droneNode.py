@@ -21,6 +21,7 @@ class State(Enum):
     LAUNCHING = 1
     WAITING = 2
     MOVING = 3
+    GOTHROUGH = 4
 
     LANDING = 8
     PAUSE = 9
@@ -43,6 +44,12 @@ class droneNode(Node):
 
         self.lidars = []
 
+
+        self.wpMsg = None
+        self.waypoints = []
+        self.currentWaypoint = 0
+        self.tempDest = None
+
         self.front = float('inf')
         self.front_left = float('inf')
         self.front_right = float('inf')
@@ -51,10 +58,6 @@ class droneNode(Node):
 
         self.pose = [0.0, 0.0, 0.0]  # (latitude, longitude, altitude)
 
-        # self.ready = False
-
-        # if drone_id == 0:
-        #     self.ready = True
         self.ready = True
 
         self.instruction = None
@@ -83,6 +86,8 @@ class droneNode(Node):
 
         self.finished = False
 
+        self.pauseTimer = 0
+
         self.destination = (0.0, 0.0, 0.0)
         # MAVProxy creates UDP outputs starting at 14550. 
         # Let's use 14551 for Drone 0, 14561 for Drone 1, etc.
@@ -103,7 +108,6 @@ class droneNode(Node):
         
 
         self.takenOff = False
-        self.waypoints = 0
         
       
         
@@ -150,8 +154,8 @@ class droneNode(Node):
         if 'LOCAL_POSITION_NED' in str(msg):
             self.pose = [msg.x, msg.y, -msg.z]
         
-        self.get_logger().info(f"Current Pose: x={self.pose[0]:.2f}, y={self.pose[1]:.2f}, z={self.pose[2]:.2f}")
-        self.get_logger().info(f"Current Altitude: {self.altitude:.2f}m")
+        # self.get_logger().info(f"Current Pose: x={self.pose[0]:.2f}, y={self.pose[1]:.2f}, z={self.pose[2]:.2f}")
+        # self.get_logger().info(f"Current Altitude: {self.altitude:.2f}m")
             
 
     def subLidar_callback(self, msg):
@@ -166,7 +170,7 @@ class droneNode(Node):
         if self.front < 8.0 and self.debugLoop > 30 and self.state != State.PAUSE and self.state != State.LANDING:  # If an obstacle is closer than 8 meters in front
             self.get_logger().warn("Obstacle detected in front! Stopping movement.")
             self.state = State.PAUSE
-            self.pubState.publish(String(data=f"{self.id} | PAUSE"))
+            self.pubState.publish(String(data=f"{self.id} | pause"))
             self.get_logger().warn(f"Current state: {self.state}")
             lastDest = self.destination
             self.destination = (lastDest[0] - 4, lastDest[1], lastDest[2])  # Hold current position
@@ -207,17 +211,16 @@ class droneNode(Node):
                     arrived = True
 
                     time.sleep(2) # Small delay to stabilize at the position
+                    if self.pauseTimer == 0:
+                        self.pauseTimer = self.debugLoop
 
         except Exception as e:
             self.get_logger().error(f"Error receiving position: {e}")
 
         
-
-        #self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
-
     
-        if arrived:
-            if self.front >= 15.0:
+        if arrived and self.debugLoop - self.pauseTimer > 2:  
+            if self.front >= 12.0:
                 self.get_logger().info("Path is clear. Resuming movement.")
                 self.state = State.MOVING
                 self.pubState.publish(String(data=f"{self.id} | moving"))
@@ -226,7 +229,7 @@ class droneNode(Node):
                 self.get_logger().warn("Path still blocked. Creating node.")
                 self.pubState.publish(String(data=f"{self.id} | NEWNODE:{self.pose[0]}:{self.pose[1]}:{self.pose[2]}"))
                 self.get_logger().info(f"Published new node at position: {self.pose[0]} {self.pose[1]} {self.pose[2]}")
-                self.Gaps = self.findAngles()
+                self.gaps = self.findAngles()
                 self.state = State.LANDING
 
         
@@ -241,8 +244,7 @@ class droneNode(Node):
         # self.get_logger().info(f"Current state: {self.vehicle.system_status.state}")
         #self.get_logger().info("Control loop tick...")
         self.debugLoop += 1
-        #self.get_logger().info(f"Debug loop count: {self.debugLoop}")
-        self.get_logger().info(f"Current state: {self.state.name}") 
+        
 
         
         self.updateVariables()
@@ -257,30 +259,38 @@ class droneNode(Node):
                 if not self.takenOff:
                     self.get_logger().info("Initiating takeoff sequence...")
                     
+                    
                     self.takenOff = self.arm_and_takeoff(1)
                     self.get_logger().info(f"Takeoff status: {'Success' if self.takenOff else 'Failed'}")
-                    self.state = State.LAUNCHING
-                    self.pubState.publish(String(data=f"{self.id} | LAUNCHING"))
-                    time.sleep(0.2)
+                    
+                    
+                    time.sleep(1)
                 if self.takenOff:
                     pass
-
+ 
 
             case State.LAUNCHING:
-                if not self.goneToStart:
+                # if not self.goneToStart:
       
-                    self.gotoStart()
-                    self.goneToStart = True
+                #     self.gotoStart()
+                #     self.goneToStart = True
+                self.get_logger().info("Publishing launching state...")
+                self.pubState.publish(String(data=f"{self.id} | LAUNCHING"))
+                self.state = State.LAUNCHING
+                self.pubState.publish(String(data=f"{self.id} | ready"))
 
                 pass
             case State.WAITING:
-                self.goto(self.pose[0] + 10, self.pose[1], 8)
+                #self.goto(self.pose[0] + 10, self.pose[1], 8)
 
 
                 pass
             case State.MOVING:
                 self.get_logger().info(f"Moving towards destination: {self.destination}")
                 self.moving()
+
+            case State.GOTHROUGH:
+                self.goThrough()
 
             case State.LANDING:
                 self.get_logger().info("Initiating landing sequence...")
@@ -299,7 +309,8 @@ class droneNode(Node):
 
         
     def gotoStart(self):
-        self.goto(-4.5, 0, 8)
+        # self.goto(-4.5, 0, 8)
+        pass
 
 
 
@@ -324,25 +335,13 @@ class droneNode(Node):
                 self.ready = False
             
         self.finished = True
-        # arrived = False
-        
-        # while not arrived:   
-        #     try:
-        #         msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
-        #         if msg:
-        #             #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
-        #             self.pose = [msg.x, msg.y, -msg.z]
-        #             if abs(msg.x - x) < 0.4 and abs(msg.y - y) < 0.4 and abs(-msg.z - z) < 0.4:
 
-        #                 arrived = True
-        #                 self.finished = True
-        #     except Exception as e:
-        #         self.get_logger().error(f"Error receiving position: {e}")
         
         if self.finished:
             self.get_logger().info("Finished. Shutting down node.")
             self.get_logger().warn(f"Node created at: {self.relayNode}")
-            self.get_logger().warn(f"Gaps are at: {self.Gaps}")
+            time.sleep(15)
+            self.pubState.publish(String(data=f"{self.id} | done"))
             self.state = State.DONE
 
     def findAngles(self):
@@ -353,7 +352,7 @@ class droneNode(Node):
         print(f"lidars: {self.lidars}")
         Gaps = [] # [[degree start, degree end], [degree start, degree end], ...]
         for d in range(len(self.lidars)):
-            if self.lidars[d] > 12.0:  # If there is a gap further than 12 meters away
+            if self.lidars[d] > 12.0 or self.lidars[d] == float('inf'):  # If there is a gap further than 12 meters away
                 for g in Gaps: # Go through all existing gaps
                     if g[0] - d == 1:
                         g[0] = d  # Extend the gap to include this degree
@@ -363,6 +362,10 @@ class droneNode(Node):
                         break
                 else:
                     Gaps.append([d, d])  # Create a new gap starting and ending at this degree
+                    self.get_logger().info(f"Found new gap at degree {d} ")
+        self.get_logger().warn(f"Gaps are at: {Gaps}")
+        self.pubState.publish(String(data=f"{self.id} | GAPS:{Gaps}"))
+        time.sleep(2)
         return Gaps
 
 
@@ -370,14 +373,20 @@ class droneNode(Node):
     def moving(self):
         x,y,z = self.destination
         arrived = False
+        tempArrived = False
         try:
             msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
+            self.get_logger().info(f"message: {msg}")
             if msg:
                 #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
                 self.pose = [msg.x, msg.y, -msg.z]
                 if abs(msg.x - x) < 0.4 and abs(msg.y - y) < 0.4 and abs(-msg.z - z) < 0.4:
 
                     arrived = True
+
+                if abs(msg.x - self.tempDest[0]) < 0.4 and abs(msg.y - self.tempDest[1]) < 0.4 and abs(-msg.z - self.tempDest[2]) < 0.4:
+                    
+                    tempArrived = True
         except Exception as e:
             self.get_logger().error(f"Error receiving position: {e}")
 
@@ -386,10 +395,19 @@ class droneNode(Node):
             self.get_logger().info(f"Arrived at destination! {x}, {y}, {z}")
             time.sleep(2)  # Small delay to stabilize at the position
             self.state = State.WAITING
+            self.pubState.publish(String(data=f"{self.id} | ready"))
+            return
+
+        if tempArrived:
+            self.get_logger().info("Arrived at temporary destination, now going to final destination")
+            self.currentWaypoint += 1
+            self.state = State.GOTHROUGH
+            return
 
 
 
-    def goto(self, x, y, z):
+    def goto(self, x, y, z, yaw=0):
+        self.get_logger().info(f"in goto")
         self.lastState = self.state
         self.aheadDist = self.front
         
@@ -414,10 +432,45 @@ class droneNode(Node):
             x, y, -z,                                 # X, Y, Z (Z is negative for altitude!)
             0.2,0.2,0.2,                                        # Velocity X, Y, Z 
             0.2, 0.2, 0.2,                                        # Acceleration 
-            0, 0                                            # Yaw, Yaw rate 
+            yaw, 0                                            # Yaw, Yaw rate 
         )
         self.pubState.publish(String(data=f"{self.id} | moving"))
         self.state = State.MOVING
+
+
+    def goThrough(self):
+        
+
+
+        self.get_logger().info(f"Initial waypoints: {self.waypoints}")
+        if self.waypoints == []:  # Only process the waypoints if we haven't already (in case of multiple messages)
+            self.get_logger().info(f"Sorting waypoints in gothrough")
+            
+
+            wp = self.wpMsg.data.split(":")[1].split(";")[:-1]  # Get the waypoints from the message, and remove the last empty element after the final ";"
+            for w in wp:
+                coords = w.split(",")
+                self.waypoints.append((float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3])))  # Convert the coordinates to floats and store as tuples in the waypoints list
+            self.get_logger().info(f"Processed waypoints: {self.waypoints}")
+
+
+
+
+
+
+            
+        # self.get_logger().info(f"Upcoming coordinates: {self.waypoints[self.currentWaypoint]}")
+        self.get_logger().info(f"Going through waypoints: {self.waypoints} with current waypoint index: {self.currentWaypoint}")
+        self.goto(float(self.waypoints[self.currentWaypoint][0]), float(self.waypoints[self.currentWaypoint][1]), float(self.waypoints[self.currentWaypoint][2]), yaw=float(self.waypoints[self.currentWaypoint][3]))
+
+        
+
+
+
+
+
+    def findNextNode(self):
+        self.goto(self.pose[0] + 10, self.pose[1], 8)
         
 
    
@@ -434,18 +487,27 @@ class droneNode(Node):
             self.get_logger().error(f"Error in do_logs: {e}")
 
         self.get_logger().info(f"Current Pose: x={self.pose[0]:.2f}, y={self.pose[1]:.2f}, z={self.pose[2]:.2f}")
-        
+        self.get_logger().info(f"Current state: {self.state.name}") 
 
 
     def listener_callback(self, msg):
-        if self.debugLoop % 10 == 0: 
-            self.get_logger().info("listener callback")
-            self.get_logger().info(f"Received command: {msg.data} at start of listener callback")
-        if str(msg.data)[0] != str(self.id):
+
+
+        #self.get_logger().info(f"instruction: {msg.data.split('|')[1].split(':')[0]}")
+        # if self.debugLoop % 10 == 0: 
+        #     self.get_logger().info("listener callback")
+        #     self.get_logger().info(f"Received command: {msg.data} at start of listener callback")
+
+        dnum = int(msg.data.split('|')[0].split('_')[1])
+        self.get_logger().info(f"Received command for drone {dnum}, and I am drone: {self.id}")
+            
+        if str(dnum) != str(self.id):
             return  # Ignore messages not intended for this drone
+        self.pubState.publish(String(data=f"{self.id} | Processing command"))
         self.cmd_msg = msg
         self.get_logger().info(f"Received command: {msg.data}")
-        if "GOTO" in msg.data and False:
+        
+        if "GOTO" in msg.data:
             # Expecting format: "drone_0|GOTO: x:5.0 y:5.0 z:3.0"
             try:
                 cmd_parts = msg.data.split("|")[1].split("GOTO: ")[1]
@@ -456,6 +518,18 @@ class droneNode(Node):
                 self.goto(x, y, z)
             except Exception as e:
                 self.get_logger().error(f"Failed to parse GOTO command: {e}")
+        elif "Explore" in msg.data:
+            self.findNextNode()
+        elif "THROUGH" in str(msg.data):
+            # Expecting format: "drone_0|GOTHROUGH: x1, y1, z1, r1; x2, y2, z2, r2; ..."
+            # So I can split over : for command and values, then split values over ; for each waypoint, then split each waypoint over "," for coordinates
+            self.wpMsg = msg
+            self.state = State.GOTHROUGH
+            self.get_logger().info(f"Received GOTHROUGH command with waypoints: {self.wpMsg.data.split(':')[1]}")
+            
+        else: 
+            pass
+
         return
 
 
@@ -508,18 +582,22 @@ class droneNode(Node):
         time.sleep(0.5)  # Small delay before arming
         
         self.get_logger().info("Arming and taking off...")
+
+        self.get_logger().info("Publishing launching state...")
+        self.pubState.publish(String(data=f"{self.id} | LAUNCHING"))
+        self.state = State.LAUNCHING
         
         try:
             self.vehicle.set_mode("GUIDED")
             self.get_logger().info("Mode set to GUIDED. Arming motors...")
-            time.sleep(2)
+            time.sleep(1)
 
 
                 
             self.vehicle.arducopter_arm()
             self.vehicle.motors_armed_wait()
             
-            time.sleep(2)
+            time.sleep(1)
             
             self.get_logger().info("Motors armed. Sending takeoff command...")
             
@@ -546,6 +624,10 @@ class droneNode(Node):
             if altMsg:
                 self.get_logger().info(f"Current Altitude: {altMsg.alt - self.initialAltitude:.2f}m")
             time.sleep(0.2)
+
+        
+
+
         self.get_logger().info(f"published initial position: {self.id} | pos: 0.0 0.0 {target_altitude}")
         self.pubState.publish(String(data=f"{self.id} | pos: 0.0 0.0 {target_altitude}"))
 

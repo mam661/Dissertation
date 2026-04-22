@@ -6,6 +6,7 @@ class droneProperties:
         self.is_armed = False
         self.pose = [0.0, 0.0, 0.0]  # (latitude, longitude, altitude)
         self.status = "idle"
+        self.last_status = None
         self.last_update = None
         
     def get_id(self):
@@ -41,11 +42,17 @@ class droneProperties:
     
     def set_status(self, status):
         """Set drone operational status."""
+        self.last_status = self.status
         self.status = status.lower()
+        
     
     def get_status(self):
         """Get drone status."""
         return self.status
+    
+    def get_last_status(self):
+        """Get the last status of the drone."""
+        return self.last_status
     
     def get_info(self):
         """Get all drone information as dictionary."""
