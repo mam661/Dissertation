@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     # 1. Paths
-    world_path = '/workspaces/Dissertation/models/map2.world'
+    world_path = '/workspaces/Dissertation/models/map3.world'
     model_path = '/workspaces/Dissertation/models'
     spawn_script = '/workspaces/Dissertation/spawn_drones.py'
 

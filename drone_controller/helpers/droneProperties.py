@@ -8,6 +8,8 @@ class droneProperties:
         self.status = "idle"
         self.last_status = None
         self.last_update = None
+        self.activated = False
+        self.path = None
         
     def get_id(self):
         """Get the drone's unique identifier."""
@@ -25,7 +27,7 @@ class droneProperties:
     def set_position(self, latitude, longitude, altitude):
         """Set drone GPS position and altitude."""
         self.pose = [latitude, longitude, altitude]
-        print(f"set pose to {self.pose}")
+        #print(f"set pose to {self.pose}")
     
     def get_position(self):
         """Get drone position as tuple [lat, lon, alt]."""
@@ -65,3 +67,16 @@ class droneProperties:
             "speed": self.speed,
             "status": self.status
         }
+
+    def get_activation(self):
+        #print(f"dp - activation: {self.activated}")
+        return self.activated
+
+    def set_activation(self, setting):
+        self.activated = setting
+
+    def set_path(self, path):
+        self.path = path
+
+    def get_path(self):
+        return self.path

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from enum import Enum
+import math
 from multiprocessing import connection
 import sys
 import time
@@ -50,6 +51,8 @@ class droneNode(Node):
         self.currentWaypoint = 0
         self.tempDest = None
 
+        self.finalDest = None
+
         self.front = float('inf')
         self.front_left = float('inf')
         self.front_right = float('inf')
@@ -88,6 +91,8 @@ class droneNode(Node):
 
         self.pauseTimer = 0
 
+        self.exploreDirection = 0
+
         self.destination = (0.0, 0.0, 0.0)
         # MAVProxy creates UDP outputs starting at 14550. 
         # Let's use 14551 for Drone 0, 14561 for Drone 1, etc.
@@ -108,6 +113,8 @@ class droneNode(Node):
         
 
         self.takenOff = False
+
+        self.exploring = False
         
       
         
@@ -167,21 +174,21 @@ class droneNode(Node):
         self.lidars = msg.ranges
         
 
-        if self.front < 8.0 and self.debugLoop > 30 and self.state != State.PAUSE and self.state != State.LANDING:  # If an obstacle is closer than 8 meters in front
+        if self.front < 5.0 and self.debugLoop > 30 and self.state != State.PAUSE and self.state != State.LANDING and self.state != State.WAITING and self.exploring:  # If an obstacle is closer than 8 meters in front
             self.get_logger().warn("Obstacle detected in front! Stopping movement.")
             self.state = State.PAUSE
             self.pubState.publish(String(data=f"{self.id} | pause"))
             self.get_logger().warn(f"Current state: {self.state}")
-            lastDest = self.destination
-            self.destination = (lastDest[0] - 4, lastDest[1], lastDest[2])  # Hold current position
-            self.get_logger().warn(f"Going to destination: ({self.destination}) due to obstacle")
+            lastDest = self.finalDest
+            self.finalDest = (lastDest[0] - 3 * math.cos(self.exploreDirection), lastDest[1] - 3 * math.sin(self.exploreDirection), lastDest[2])  # Hold current position
+            self.get_logger().warn(f"Going to destination: ({self.finalDest}) due to obstacle")
             self.vehicle.mav.set_position_target_local_ned_send(
                 0,                                               # Time boot ms (not used)
                 self.vehicle.target_system, 
                 self.vehicle.target_component,
                 mavutil.mavlink.MAV_FRAME_LOCAL_NED,            # Use the local coordinate system
-                0b0000101111111000,                             # Bitmask: only use Pos X, Y, Z
-                self.destination[0], self.destination[1], -self.destination[2],                                 # X, Y, Z (Z is negative for altitude!)
+                0b000010111011000,                             # Bitmask
+                self.finalDest[0], self.finalDest[1], -self.finalDest[2],                                 # X, Y, Z (Z is negative for altitude!)
                 0.5,0.5,0.5,                                        # Velocity X, Y, Z 
                 1, 1, 1,                                        # Acceleration 
                 0, 0                                            # Yaw, Yaw rate 
@@ -199,7 +206,7 @@ class droneNode(Node):
 
 
 
-        x,y,z = self.destination
+        x,y,z = self.finalDest
         
         try:
             msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
@@ -217,7 +224,8 @@ class droneNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error receiving position: {e}")
 
-        
+        if arrived:
+            self.get_logger().info(f"Arrived at pause destination: {x}, {y}, {z}")
     
         if arrived and self.debugLoop - self.pauseTimer > 2:  
             if self.front >= 12.0:
@@ -227,8 +235,8 @@ class droneNode(Node):
             else:
 
                 self.get_logger().warn("Path still blocked. Creating node.")
-                self.pubState.publish(String(data=f"{self.id} | NEWNODE:{self.pose[0]}:{self.pose[1]}:{self.pose[2]}"))
-                self.get_logger().info(f"Published new node at position: {self.pose[0]} {self.pose[1]} {self.pose[2]}")
+                self.pubState.publish(String(data=f"{self.id} | NEWNODE:{self.pose[0] - 5 * self.id},{self.pose[1]},{self.pose[2]}"))
+                self.get_logger().info(f"Published new node at position: {self.pose[0] - 5 * self.id} {self.pose[1]} {self.pose[2]}")
                 self.gaps = self.findAngles()
                 self.state = State.LANDING
 
@@ -240,9 +248,7 @@ class droneNode(Node):
 
         if self.state == State.DONE:
             return
-        # This is the main control loop, called at a fixed rate by the timer
-        # self.get_logger().info(f"Current state: {self.vehicle.system_status.state}")
-        #self.get_logger().info("Control loop tick...")
+        
         self.debugLoop += 1
         
 
@@ -270,13 +276,10 @@ class droneNode(Node):
  
 
             case State.LAUNCHING:
-                # if not self.goneToStart:
-      
-                #     self.gotoStart()
-                #     self.goneToStart = True
-                self.get_logger().info("Publishing launching state...")
-                self.pubState.publish(String(data=f"{self.id} | LAUNCHING"))
-                self.state = State.LAUNCHING
+                
+                self.get_logger().info("Publishing ready state in launching...")
+                #self.pubState.publish(String(data=f"{self.id} | LAUNCHING"))
+                #self.state = State.LAUNCHING
                 self.pubState.publish(String(data=f"{self.id} | ready"))
 
                 pass
@@ -307,16 +310,11 @@ class droneNode(Node):
 
                 pass
 
-        
-    def gotoStart(self):
-        # self.goto(-4.5, 0, 8)
-        pass
-
 
 
     def finish(self):
         if not self.finished:
-            self.relayNode = [self.pose[0], self.pose[1], self.pose[2]]
+            self.relayNode = [self.pose[0] - 5 * self.id, self.pose[1], self.pose[2]]
             self.destination = (self.pose[0], self.pose[1], self.pose[2]-5)  # Land by going 5 meters down from current position to get them out of the way
             x,y,z = self.destination
             if self.ready:
@@ -340,7 +338,7 @@ class droneNode(Node):
         if self.finished:
             self.get_logger().info("Finished. Shutting down node.")
             self.get_logger().warn(f"Node created at: {self.relayNode}")
-            time.sleep(15)
+            time.sleep(7)
             self.pubState.publish(String(data=f"{self.id} | done"))
             self.state = State.DONE
 
@@ -364,73 +362,93 @@ class droneNode(Node):
                     Gaps.append([d, d])  # Create a new gap starting and ending at this degree
                     self.get_logger().info(f"Found new gap at degree {d} ")
         self.get_logger().warn(f"Gaps are at: {Gaps}")
-        self.pubState.publish(String(data=f"{self.id} | GAPS:{Gaps}"))
+        self.pubState.publish(String(data=f"{self.id} | GAPS:{Gaps} yaw-{self.exploreDirection}"))
         time.sleep(2)
         return Gaps
-
 
 
     def moving(self):
         x,y,z = self.destination
         arrived = False
         tempArrived = False
+
         try:
             msg = self.vehicle.recv_match(type='LOCAL_POSITION_NED', blocking=True, timeout=5)
-            self.get_logger().info(f"message: {msg}")
+            #self.get_logger().info(f"message in moving: {msg}")
             if msg:
-                #self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
+                self.pubState.publish(String(data=f"{self.id} | pos: {msg.x} {msg.y} {-msg.z}"))
+                self.get_logger().info(f"pos: {msg.x} {msg.y} {-msg.z}")
                 self.pose = [msg.x, msg.y, -msg.z]
-                if abs(msg.x - x) < 0.4 and abs(msg.y - y) < 0.4 and abs(-msg.z - z) < 0.4:
-
-                    arrived = True
-
-                if abs(msg.x - self.tempDest[0]) < 0.4 and abs(msg.y - self.tempDest[1]) < 0.4 and abs(-msg.z - self.tempDest[2]) < 0.4:
-                    
+                
+                
+                if abs(self.pose[0] - self.destination[0]) < 0.3 and abs(self.pose[1] - self.destination[1]) < 0.3 and abs(self.pose[2] - self.destination[2]) < 0.3:
                     tempArrived = True
+                if abs(msg.x - self.finalDest[0]) < 0.4 and abs(msg.y - self.finalDest[1]) < 0.4 and abs(-msg.z - self.finalDest[2]) < 0.4:
+                    arrived = True
         except Exception as e:
             self.get_logger().error(f"Error receiving position: {e}")
 
-        self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
+        #self.pubState.publish(String(data=f"{self.id} | pos: {x} {y} {z}"))
         if arrived:
+
             self.get_logger().info(f"Arrived at destination! {x}, {y}, {z}")
             time.sleep(2)  # Small delay to stabilize at the position
             self.state = State.WAITING
             self.pubState.publish(String(data=f"{self.id} | ready"))
+            self.finalDest = [1000,1000,1000]  # Set final destination to something far away for now, since we will be going to the next waypoint before that
             return
 
         if tempArrived:
-            self.get_logger().info("Arrived at temporary destination, now going to final destination")
-            self.currentWaypoint += 1
+            self.get_logger().info(f"Arrived at temporary destination of {self.destination}, now going to next waypoint (possibly final)")
+            if len(self.waypoints) > self.currentWaypoint+1:
+                self.currentWaypoint += 1
+            else:
+                self.currentWaypoint = -1
+            
             self.state = State.GOTHROUGH
+            
             return
 
 
 
-    def goto(self, x, y, z, yaw=0):
+    def goto(self, x, y, z, yaw=0, through=False):
         self.get_logger().info(f"in goto")
         self.lastState = self.state
         self.aheadDist = self.front
+        if self.aheadDist < 15.0:
+            x = self.pose[0] + ((self.aheadDist - 1.5) * math.cos(self.exploreDirection))
+            y = self.pose[1] + ((self.aheadDist - 1.5) * math.sin(self.exploreDirection))
+
+        
         
         self.destination = (x, y, z)
-        self.get_logger().info(f"Going to position: ({x}, {y}, {z})")
+        if not through:
+            self.finalDest = (x, y, z)###########################################
+
+        if yaw != 0:
+            self.get_logger().warn(f"Going to position: ({x}, {y}, {z}) with yaw: {yaw}")
+        else:    
+            self.get_logger().warn(f"Going to position: ({x}, {y}, {z})")
 
         # BITMASK EXPLANATION:
         # 0b0000 1 0 111 111 000
+        
         #        | | |   |   |
         #        | | |   |   +-- Use Position (X, Y, Z)
         #        | | |   +------ Ignore Velocity
         #        | | +---------- Ignore Acceleration
         #        | +------------ USE YAW (This bit must be 0)
         #        +-------------- Ignore Yaw Rate
-        
+        # 0b0000 1 0 000 000 000
         self.vehicle.mav.set_position_target_local_ned_send(
             0,                                               # Time boot ms (not used)
             self.vehicle.target_system, 
             self.vehicle.target_component,
             mavutil.mavlink.MAV_FRAME_LOCAL_NED,            # Use the local coordinate system
-            0b0000101111111000,                             # Bitmask: only use Pos X, Y, Z
+            #0b000010111011000,                            # Bitmask: only use Pos X, Y, Z   <-- This is the original bitmask, but it doesn't work with yaw for some reason, so I changed it to the one below
+            0b000000111011000,
             x, y, -z,                                 # X, Y, Z (Z is negative for altitude!)
-            0.2,0.2,0.2,                                        # Velocity X, Y, Z 
+            0.4,0.4,0.4,                                        # Velocity X, Y, Z 
             0.2, 0.2, 0.2,                                        # Acceleration 
             yaw, 0                                            # Yaw, Yaw rate 
         )
@@ -440,7 +458,7 @@ class droneNode(Node):
 
     def goThrough(self):
         
-
+     
 
         self.get_logger().info(f"Initial waypoints: {self.waypoints}")
         if self.waypoints == []:  # Only process the waypoints if we haven't already (in case of multiple messages)
@@ -455,13 +473,17 @@ class droneNode(Node):
 
 
 
+        self.finalDest = (self.waypoints[-1][0], self.waypoints[-1][1], self.waypoints[-1][2])
 
-
-
-            
+        self.exploreDirection = self.waypoints[-1][3]  # The last value in the last waypoint is the yaw, which we can use as the direction to explore in after going through the waypoints    
         # self.get_logger().info(f"Upcoming coordinates: {self.waypoints[self.currentWaypoint]}")
         self.get_logger().info(f"Going through waypoints: {self.waypoints} with current waypoint index: {self.currentWaypoint}")
-        self.goto(float(self.waypoints[self.currentWaypoint][0]), float(self.waypoints[self.currentWaypoint][1]), float(self.waypoints[self.currentWaypoint][2]), yaw=float(self.waypoints[self.currentWaypoint][3]))
+        if len(self.waypoints[self.currentWaypoint]) == 4:
+            self.get_logger().info(f"Doing gothrough with yaw")
+            self.goto(float(self.waypoints[self.currentWaypoint][0]), float(self.waypoints[self.currentWaypoint][1]), float(self.waypoints[self.currentWaypoint][2]), yaw=float(self.waypoints[self.currentWaypoint][3]), through=True)
+        else:
+            self.get_logger().info(f"Doing gothrough without yaw")
+            self.goto(float(self.waypoints[self.currentWaypoint][0]), float(self.waypoints[self.currentWaypoint][1]), float(self.waypoints[self.currentWaypoint][2]), through=True)
 
         
 
@@ -470,13 +492,15 @@ class droneNode(Node):
 
 
     def findNextNode(self):
-        self.goto(self.pose[0] + 10, self.pose[1], 8)
+        self.exploring = True
+        self.goto(self.pose[0] + (10*math.cos(self.exploreDirection)), self.pose[1] + (10*math.sin(self.exploreDirection)), 6.75, self.exploreDirection)
         
 
    
 
 
     def do_logs(self):
+        self.get_logger().warn("LOGS!")
         try:
             altMsg = self.vehicle.recv_match(type='VFR_HUD', blocking=False)
             if altMsg:
