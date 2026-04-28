@@ -15,7 +15,7 @@ class centralController(Node):
     def __init__(self):
         super().__init__("central_controller")
 
-        
+        self.searchMode = "DFS" #can also be changed to BFS
  
         self.get_logger().info("Central Controller starting...")
         
@@ -24,7 +24,7 @@ class centralController(Node):
 
         self.activeDrone = 0
 
-        self.nodes = [[-6, 0, 7, 0]] # starting node, entrance to cave is here
+        self.nodes = [[-6, 0, 6.75, 0]] # starting node, entrance to cave is here
 
         self.usedWaypoints = [] # This will store the paths that have been taken through the tunnel, so that we can avoid them in the future and find new paths
 
@@ -34,7 +34,7 @@ class centralController(Node):
 
         self.nextNodeLocation = None
 
-        self.paths = [] # This will store the paths that can be taken - when new paths are found, they will be added to this list, and when paths are taken, they will be moved to the usedPaths list
+        self.paths = [[[-6, 0, 6.75, 0]]] # This will store the paths that can be taken - when new paths are found, they will be added to this list, and when paths are taken, they will be moved to the usedPaths list
         self.usedPaths = [] # This will store the paths that have been taken through the tunnel, so that we can avoid them in the future and find new paths
         
         
@@ -144,7 +144,7 @@ class centralController(Node):
         
     def control_loop(self):
         self.tickNum += 1
-        if self.tickNum % 5 == 0: # every 5 seconds, print the status of the active drone
+        if self.tickNum % 10 == 0: # every 5 seconds, print the status of the active drone
             self.get_logger().info(f"Current state: {self.droneProperties[self.activeDrone].get_status()} with drone number: {self.activeDrone}, with activation of: {self.droneProperties[self.activeDrone].get_activation()}")
 
         #if self.activeDrone == 0:
@@ -154,14 +154,21 @@ class centralController(Node):
             
 
             sendNodes = ""
-            self.get_logger().info(f"Nodes: {self.nodes}")
-            for n in self.nodes:
+            self.get_logger().info(f"Nodes: {self.paths}")
+
+            
+
+            for n in self.paths[0]:
                 
                 sendNodes += f"{(n[0] + (5*self.activeDrone))},{n[1]},{n[2]},{n[3]};"
-                
+            
+            
+
             self.cmd_pubhlisher.publish(String(data=f"drone_{self.activeDrone}|GOTHROUGH: {sendNodes}"))
             self.get_logger().info(f"published: drone_{self.activeDrone}|GOTHROUGH: {sendNodes}")
             self.droneProperties[self.activeDrone].set_status("going_to_start")
+            self.droneProperties[self.activeDrone].set_path(self.paths[0])
+            del self.paths[0] # remove the path from the list of available paths, as it is now being taken by the drone
 
         if self.droneProperties[self.activeDrone].get_status() == "ready" and self.droneProperties[self.activeDrone].get_last_status() == "moving":
             self.get_logger().info(f"Drone {self.activeDrone} has reached the start of the tunnel, sending it to explore")
@@ -172,11 +179,12 @@ class centralController(Node):
             self.get_logger().info(f"Drone {self.activeDrone} is at the start, sending it to explore")
 
         if self.droneProperties[self.activeDrone].get_status() == "moving":
-            self.get_logger().info(f"Drone {self.activeDrone} is moving, waiting for it to finish")
-            # Wait for drone 0 to finish before activating drone 1
+            if self.tickNum % 10 == 0:
+                self.get_logger().info(f"Drone {self.activeDrone} is moving, waiting for it to finish")
             return
         if self.droneProperties[self.activeDrone].get_last_status() == "moving" and self.droneProperties[self.activeDrone].get_status() == "pause":
-            self.get_logger().info(f"Drone {self.activeDrone} is paused, waiting for resolution")
+            if self.tickNum % 10 == 0:
+                self.get_logger().info(f"Drone {self.activeDrone} is paused, waiting for resolution")
             return
         if self.droneProperties[self.activeDrone].get_last_status() == "pause" and self.droneProperties[self.activeDrone].get_status() == "moving":
             self.get_logger().info(f"Drone {self.activeDrone} has resumed moving, waiting for it to finish")
@@ -221,19 +229,30 @@ class centralController(Node):
 
         for i in range(0, len(g), 2):
             middle = (float(g[i]) + float(g[i+1])) / 2
-            set.append((str(-1 * math.radians(middle) + yaw)))
+
+
+            if abs(abs(middle) - 170) > 10:  # if the gap is within 10 degrees of 170, we will ignore it
+                set.append((str(-1 * math.radians(middle) + yaw)))
+            
+            
             self.get_logger().info(f"Added gap at angle {middle} degrees")
         x,y,z = self.nextNodeLocation
         
+        self.get_logger().info(f"Last path taken: {self.droneProperties[self.activeDrone].get_path()}")
         
         
-        
-        self.get_logger().info(f"x:{x}")
-        self.get_logger().info(f"y:{y}")
-        self.get_logger().info(f"z:{z}")
-        self.get_logger().info(f"Appended node: {[x,y,z, set[0]]}")
-        
-        
+        for s in set:   
+            self.get_logger().info(f"x:{x}")
+            self.get_logger().info(f"y:{y}")
+            self.get_logger().info(f"z:{z}")
+
+            # if abs(abs(float(s))  - 3.14) < 0.1: # if the gap is directly behind, we will ignore it as it is unlikely to be a valid path:
+            #     self.get_logger().info(f"Ignoring gap at angle {s} radians as it is directly behind the drone")
+            # else:
+            self.get_logger().info(f"Appended node: {[x,y,z, s]}")            
+            self.paths.append([*self.droneProperties[self.activeDrone].get_path(), [x,y,z, s]])
+        # self.paths.append([*self.droneProperties[self.activeDrone].get_path(), *newPath])
+        self.get_logger().info(f"New paths: {self.paths}")
         #self.nodes.append([x,y,z, set[0]]) # I will just store the nodes as a list of tuples (gap angles, location) for now, and publish them to the drones as needed
 
 
