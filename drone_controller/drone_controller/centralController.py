@@ -15,7 +15,7 @@ class centralController(Node):
     def __init__(self):
         super().__init__("central_controller")
 
-        self.searchMode = "DFS" #can also be changed to BFS
+        self.searchMode = "BFS" # can be either BFS or DFS (breadth first search or depth first search)
  
         self.get_logger().info("Central Controller starting...")
         
@@ -74,7 +74,6 @@ class centralController(Node):
  
     def droneStateCallback(self, msg):
         
-        #self.get_logger().info(f"Received drone state: {msg.data}")
 
         self.updateStates(msg)
 
@@ -102,8 +101,6 @@ class centralController(Node):
             z = float(pos_list[2])
             self.droneProperties[int(num)].set_position(x, y, z)
             self.get_logger().info(f"x: {x}, y: {y} z: {z}")
-            # self.get_logger().info(f"Updated position for drone {num} to [{x}, {y}, {z}]")
-            # self.get_logger().info(f"Drone {num} is now at position: {self.droneProperties[int(num)].get_position()}")
         elif "ready" in msg:
             self.get_logger().info(f"Drone {num} is ready")
             self.droneProperties[int(num)].set_status("ready")
@@ -150,19 +147,20 @@ class centralController(Node):
         #if self.activeDrone == 0:
         if self.droneProperties[self.activeDrone].get_status() == "ready" and self.droneProperties[self.activeDrone].get_activation() == False:
             self.droneProperties[self.activeDrone].set_activation(True)
-            self.get_logger().info(f"Drone {self.activeDrone} is ready, sending it to the start of the tunnel")
-            
+            self.get_logger().info(f"Drone {self.activeDrone} is ready, sending it to the start of the tunnel")            
 
             sendNodes = ""
-            self.get_logger().info(f"Nodes: {self.paths}")
+            self.get_logger().info(f"Paths before rearrangement: {self.paths}")  
 
-            
+            if self.searchMode == "DFS":
+                self.paths.sort() # makes longest path first, which essentially gives depth first search. Also due to how the paths are added, the "top" path will be the "left" one.
+
+
+            self.get_logger().info(f"Paths after being rearranged: {self.paths}")        
 
             for n in self.paths[0]:
                 
-                sendNodes += f"{(n[0] + (5*self.activeDrone))},{n[1]},{n[2]},{n[3]};"
-            
-            
+                sendNodes += f"{(n[0] + (5*self.activeDrone))},{n[1]},{n[2]},{n[3]};"            
 
             self.cmd_pubhlisher.publish(String(data=f"drone_{self.activeDrone}|GOTHROUGH: {sendNodes}"))
             self.get_logger().info(f"published: drone_{self.activeDrone}|GOTHROUGH: {sendNodes}")
@@ -216,14 +214,10 @@ class centralController(Node):
         g = gaps.split(",") # as it's a string for a list, it will go into  [ [[start , end] , [start , end] ... ]etc so for 3 gaps I have 6 items
 
         for i in range(len(g)): # this gets ride of all the extra stuff
-            #self.get_logger().info(f"g[i] before: {g[i]}")
             g[i] = g[i].strip("[] ")
-            #self.get_logger().info(f"g[i] after: {g[i]}")
 
-        self.get_logger().info(f"g split and stripped: {g}")
+        self.get_logger().info(f"g split and stripped: {g}") # mostly used for debugging, but useful for the user
 
-        # for i in range(len(g)):
-        #     g[i] = g[i].strip("[").strip("]") # gives just the list of numbers
         
         self.get_logger().info(f"Processed gaps: {g}")  
 
@@ -231,7 +225,7 @@ class centralController(Node):
             middle = (float(g[i]) + float(g[i+1])) / 2
 
 
-            if abs(abs(middle) - 170) > 10:  # if the gap is within 10 degrees of 170, we will ignore it
+            if abs(abs(middle) - 170) > 20:  # if the gap is within 20 degrees of 170, we will ignore it, as it's probably the way it came from (not useful)
                 set.append((str(-1 * math.radians(middle) + yaw)))
             
             
@@ -246,29 +240,25 @@ class centralController(Node):
             self.get_logger().info(f"y:{y}")
             self.get_logger().info(f"z:{z}")
 
-            # if abs(abs(float(s))  - 3.14) < 0.1: # if the gap is directly behind, we will ignore it as it is unlikely to be a valid path:
-            #     self.get_logger().info(f"Ignoring gap at angle {s} radians as it is directly behind the drone")
-            # else:
             self.get_logger().info(f"Appended node: {[x,y,z, s]}")            
             self.paths.append([*self.droneProperties[self.activeDrone].get_path(), [x,y,z, s]])
-        # self.paths.append([*self.droneProperties[self.activeDrone].get_path(), *newPath])
+            
         self.get_logger().info(f"New paths: {self.paths}")
-        #self.nodes.append([x,y,z, set[0]]) # I will just store the nodes as a list of tuples (gap angles, location) for now, and publish them to the drones as needed
+        
 
 
         pass
     
     
-    def testPublish(self):
+    def testPublish(self): #never called, but could be useful for testing by someone
         
         msg = String()
         for i in self.droneProperties:
-            #self.get_logger().info(f"Drone {i.get_id()} is in state {i.get_status()}")
+            
             d_num = i.get_id().split("_")[1]
             msg.data = f"drone_{d_num}|GOTO: x:{2*int(d_num)} y:0 z:2"
             self.cmd_pubhlisher.publish(msg)
-        #msg.data = f"ALL|HELLO tick={self.tickNum}"
-        #self.cmd_pubhlisher.publish(msg)
+            
         self.tickNum += 1
         self.get_logger().info(f"Published a message")
  
